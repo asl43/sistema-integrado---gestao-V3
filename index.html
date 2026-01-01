@@ -153,6 +153,7 @@
         .tag-receber { background: #d1fae5; color: #065f46; }
         .tag-pagar { background: #fee2e2; color: #991b1b; }
         .tag-investimento { background: #ddd6fe; color: #5b21b6; }
+        .tag-recorrencia { background: #fef3c7; color: #92400e; font-size: 10px; }
         
         /* Totalizadores */
         .total-section { 
@@ -254,6 +255,7 @@
         body.dark-mode .item-lista { background: #2d2d3f; color: #e2e8f0; }
         body.dark-mode .resumo-mes { background: #2d2d3f; border-color: #3d3d4f; }
         body.dark-mode .chart-wrapper { background: #2d2d3f; }
+        body.dark-mode .modal-content { background: #1e1e2f; color: #e2e8f0; }
         
         /* Responsividade */
         @media (max-width: 768px) {
@@ -313,6 +315,11 @@
             font-size: 13px;
             color: #64748b;
         }
+        
+        body.dark-mode .contador-registros { background: #2d2d3f; color: #94a3b8; }
+        
+        /* Recorrência highlight */
+        .item-lista.recorrente { border-left-color: #f59e0b; }
     </style>
 </head>
 <body>
@@ -559,6 +566,20 @@
         <input id="valInv" type="number" step="0.01" placeholder="Valor da Aplicação R$" min="0">
         <input id="renInv" type="number" step="0.01" placeholder="Renda Mensal Esperada R$" min="0">
         <input id="dataInv" type="date">
+        
+        <label style="display:block; margin-top:15px; color:var(--primary); font-weight:bold;">
+            📅 Este investimento é recorrente?
+        </label>
+        <select id="recorrenciaInv">
+            <option value="Não">Não</option>
+            <option value="Diário">🔄 Diariamente</option>
+            <option value="Mensal">📆 Mensal</option>
+            <option value="Bimestral">📅 Bimestral (2 meses)</option>
+            <option value="Trimestral">🗓️ Trimestral (3 meses)</option>
+            <option value="Semestral">📊 Semestral (6 meses)</option>
+            <option value="Anual">🎯 Anual</option>
+        </select>
+        
         <button onclick="salvarInv()">💾 Salvar Investimento</button>
         <button class="secondary" onclick="abrirTela('telaDashboard')">← Voltar ao Dashboard</button>
         
@@ -664,13 +685,13 @@
 
 <script>
 // CONFIGURAÇÃO DA API
-const URL_API = "https://script.google.com/macros/s/AKfycbwvVLwGYVfHvfVc9Zt_XzaaL75ht9FAptINbWyV9OK3d2pJ6g81ZBGRYdy64Y6YCTq3/exec";
+const URL_API = "https://script.google.com/macros/s/AKfycbxnKrDrsZfxjRyne5gcbZ0R4h2B-bsMW_qygam3FkD5EZOc2EBWSOaUQZbGL-82vROd/exec";
 let currentUser = { nome: "", cpf: "", email: "" };
 let db = { financeiro: [], investimentos: [], anotacoes: [] };
 let chartInstance = null;
 let chartCategorias = null;
 let chartEvolucao = null;
-let editando = { tipo: "", id: null };
+let editando = { tipo: "", id: null, rowIndex: null };
 
 // SISTEMA DE NOTIFICAÇÕES MELHORADO
 function mostrarNotificacao(mensagem, tipo = 'success') {
@@ -883,6 +904,7 @@ function salvarInv() {
     const val = parseFloat(document.getElementById("valInv").value || 0);
     const ren = parseFloat(document.getElementById("renInv").value || 0);
     const data = document.getElementById("dataInv").value;
+    const recorrencia = document.getElementById("recorrenciaInv").value;
     
     // Limpar erros
     document.querySelectorAll('#telaInvestimentos input, #telaInvestimentos select').forEach(i => i.classList.remove('error'));
@@ -917,7 +939,8 @@ function salvarInv() {
         tipo,
         ativo,
         valorFormatado,
-        rendaFormatada
+        rendaFormatada,
+        recorrencia
     ];
     
     enviarDados("INVESTIMENTOS", dados, "Investimentos");
@@ -1148,11 +1171,14 @@ function renderizar(tela, dados) {
     lista.innerHTML = dados.map((r, idx) => {
         const tag = r[3].includes("Receber") ? "tag-receber" : (r[3].includes("Pagar") ? "tag-pagar" : "tag-investimento");
         const categoria = r[3];
+        const recorrencia = r[7] && r[7] !== 'Não' ? r[7] : '';
+        const isRecorrente = recorrencia ? 'recorrente' : '';
         
         return `
-            <div class="item-lista">
+            <div class="item-lista ${isRecorrente}">
                 <div class="item-content">
                     <span class="tag ${tag}">${categoria}</span>
+                    ${recorrencia ? `<span class="tag tag-recorrencia">🔄 ${recorrencia}</span>` : ''}
                     <b style="font-size:16px;">${r[4] || r[4]}</b><br>
                     <small style="color:#666;">
                         📅 ${r[0]} | 💰 <b style="color:var(--primary);">${r[5]}</b>
@@ -1419,7 +1445,8 @@ function gerarPDF(tela) {
             r[3],
             r[4],
             r[5],
-            r[6] || '-'
+            r[6] || '-',
+            r[7] || '-'
         ]);
         
         if(dados.length === 0) {
@@ -1427,11 +1454,11 @@ function gerarPDF(tela) {
         } else {
             doc.autoTable({
                 startY: 40,
-                head: [['Data', 'Categoria', 'Descrição', 'Valor', 'Extra']],
+                head: [['Data', 'Categoria', 'Descrição', 'Valor', 'Extra', 'Recorrência']],
                 body: dados,
                 theme: 'grid',
                 headStyles: { fillColor: [99, 102, 241] },
-                styles: { fontSize: 9 }
+                styles: { fontSize: 8 }
             });
         }
         
@@ -1452,10 +1479,10 @@ function exportarExcel(tela) {
             return;
         }
         
-        let csv = "Data;Categoria;Descrição;Valor;Extra\n";
+        let csv = "Data;Categoria;Descrição;Valor;Extra;Recorrência\n";
         
         dados.forEach(r => {
-            csv += `${r[0]};${r[3]};${r[4]};${r[5]};${r[6] || '-'}\n`;
+            csv += `${r[0]};${r[3]};${r[4]};${r[5]};${r[6] || '-'};${r[7] || '-'}\n`;
         });
         
         const BOM = "\uFEFF";
@@ -1502,15 +1529,17 @@ function gerarRelatorioPDF() {
     }
 }
 
-// EDIÇÃO E EXCLUSÃO
+// EDIÇÃO E EXCLUSÃO COM INTEGRAÇÃO REAL NA PLANILHA
 function editarRegistro(tela, idx) {
-    editando = { tipo: tela, id: idx };
     const registro = db[tela.toLowerCase()][idx];
     
     if(!registro) {
         mostrarNotificacao("Registro não encontrado!", "error");
         return;
     }
+    
+    // Armazenar o índice real da linha na planilha (rowIndex)
+    editando = { tipo: tela, id: idx, rowIndex: idx + 2 }; // +2 porque linha 1 é cabeçalho
     
     const form = document.getElementById("formEdit");
     
@@ -1535,10 +1564,31 @@ function editarRegistro(tela, idx) {
             <input id="editVal" type="number" step="0.01" value="${registro[5].replace('R$ ', '').replace(',', '.')}" placeholder="Valor">
         `;
     } else if(tela === "Investimentos") {
+        const recorrenciaAtual = registro[7] || 'Não';
+        
         form.innerHTML = `
             <input id="editAtivo" value="${registro[4]}" placeholder="Nome do Ativo">
+            <select id="editTipo">
+                <option value="Ações" ${registro[3] === 'Ações' ? 'selected' : ''}>📊 Ações</option>
+                <option value="FIIs" ${registro[3] === 'FIIs' ? 'selected' : ''}>🏢 Fundos Imobiliários</option>
+                <option value="Renda Fixa" ${registro[3] === 'Renda Fixa' ? 'selected' : ''}>💰 Renda Fixa</option>
+                <option value="Criptomoedas" ${registro[3] === 'Criptomoedas' ? 'selected' : ''}>₿ Criptomoedas</option>
+                <option value="Outros" ${registro[3] === 'Outros' ? 'selected' : ''}>📦 Outros</option>
+            </select>
             <input id="editVal" type="number" step="0.01" value="${registro[5].replace('R$ ', '').replace(',', '.')}" placeholder="Valor">
             <input id="editRen" type="number" step="0.01" value="${registro[6]?.replace('R$ ', '').replace(',', '.') || '0'}" placeholder="Renda">
+            <label style="display:block; margin-top:10px; color:var(--primary); font-weight:bold;">
+                📅 Recorrência:
+            </label>
+            <select id="editRecorrencia">
+                <option value="Não" ${recorrenciaAtual === 'Não' ? 'selected' : ''}>Não</option>
+                <option value="Diário" ${recorrenciaAtual === 'Diário' ? 'selected' : ''}>🔄 Diariamente</option>
+                <option value="Mensal" ${recorrenciaAtual === 'Mensal' ? 'selected' : ''}>📆 Mensal</option>
+                <option value="Bimestral" ${recorrenciaAtual === 'Bimestral' ? 'selected' : ''}>📅 Bimestral</option>
+                <option value="Trimestral" ${recorrenciaAtual === 'Trimestral' ? 'selected' : ''}>🗓️ Trimestral</option>
+                <option value="Semestral" ${recorrenciaAtual === 'Semestral' ? 'selected' : ''}>📊 Semestral</option>
+                <option value="Anual" ${recorrenciaAtual === 'Anual' ? 'selected' : ''}>🎯 Anual</option>
+            </select>
         `;
     } else if(tela === "Anotacoes") {
         form.innerHTML = `
@@ -1556,7 +1606,7 @@ function editarRegistro(tela, idx) {
 }
 
 function salvarEdicao() {
-    const { tipo, id } = editando;
+    const { tipo, id, rowIndex } = editando;
     
     if(tipo === "Financeiro") {
         const cat = document.getElementById("editCategoria")?.value;
@@ -1568,22 +1618,49 @@ function salvarEdicao() {
             return;
         }
         
-        db.financeiro[id][4] = `${cat} - ${desc}`;
-        db.financeiro[id][5] = `R$ ${val.toFixed(2)}`;
+        const novaDescricao = `${cat} - ${desc}`;
+        const novoValor = `R$ ${val.toFixed(2)}`;
+        
+        // Atualizar localmente primeiro
+        db.financeiro[id][4] = novaDescricao;
+        db.financeiro[id][5] = novoValor;
+        
+        // Enviar atualização para a planilha
+        atualizarNaPlanilha("FINANCEIRO", rowIndex, {
+            descricao: novaDescricao,
+            valor: novoValor
+        });
         
     } else if(tipo === "Investimentos") {
         const ativo = document.getElementById("editAtivo")?.value.trim();
+        const tipoInv = document.getElementById("editTipo")?.value;
         const val = parseFloat(document.getElementById("editVal")?.value || 0);
         const ren = parseFloat(document.getElementById("editRen")?.value || 0);
+        const recorrencia = document.getElementById("editRecorrencia")?.value;
         
         if(!ativo || val <= 0) {
             mostrarNotificacao("Preencha todos os campos corretamente!", "error");
             return;
         }
         
+        const novoValor = `R$ ${val.toFixed(2)}`;
+        const novaRenda = `R$ ${ren.toFixed(2)}`;
+        
+        // Atualizar localmente
+        db.investimentos[id][3] = tipoInv;
         db.investimentos[id][4] = ativo;
-        db.investimentos[id][5] = `R$ ${val.toFixed(2)}`;
-        db.investimentos[id][6] = `R$ ${ren.toFixed(2)}`;
+        db.investimentos[id][5] = novoValor;
+        db.investimentos[id][6] = novaRenda;
+        db.investimentos[id][7] = recorrencia;
+        
+        // Enviar atualização para a planilha
+        atualizarNaPlanilha("INVESTIMENTOS", rowIndex, {
+            tipo: tipoInv,
+            ativo: ativo,
+            valor: novoValor,
+            renda: novaRenda,
+            recorrencia: recorrencia
+        });
         
     } else if(tipo === "Anotacoes") {
         const tit = document.getElementById("editTitulo")?.value.trim();
@@ -1595,33 +1672,118 @@ function salvarEdicao() {
             return;
         }
         
+        // Atualizar localmente
         db.anotacoes[id][3] = tit;
         db.anotacoes[id][4] = txt;
         db.anotacoes[id][5] = prio;
+        
+        // Enviar atualização para a planilha
+        atualizarNaPlanilha("ANOTACOES", rowIndex, {
+            titulo: tit,
+            texto: txt,
+            prioridade: prio
+        });
     }
     
     filtrar(tipo);
     fecharModal();
-    mostrarNotificacao("Alterações salvas localmente! (Sincronização em desenvolvimento)");
+}
+
+function atualizarNaPlanilha(aba, rowIndex, dados) {
+    mostrarLoading();
+    
+    const timeout = setTimeout(() => {
+        esconderLoading();
+        mostrarNotificacao("Tempo esgotado ao atualizar.", "error");
+    }, 15000);
+    
+    fetch(URL_API, {
+        method: "POST",
+        body: JSON.stringify({
+            acao: "editar",
+            aba: aba,
+            rowIndex: rowIndex,
+            dados: dados,
+            usuario: currentUser.cpf
+        })
+    })
+    .then(response => {
+        clearTimeout(timeout);
+        if(!response.ok) throw new Error('Erro na resposta');
+        return response.json();
+    })
+    .then(res => {
+        esconderLoading();
+        if(res.sucesso) {
+            mostrarNotificacao("Registro atualizado na planilha!");
+            // Recarregar dados para sincronizar
+            const tela = aba === "FINANCEIRO" ? "Financeiro" : (aba === "INVESTIMENTOS" ? "Investimentos" : "Anotacoes");
+            atualizarDados(tela);
+        } else {
+            mostrarNotificacao("Erro ao atualizar na planilha.", "error");
+        }
+    })
+    .catch(error => {
+        clearTimeout(timeout);
+        esconderLoading();
+        console.error('Erro:', error);
+        mostrarNotificacao("Erro ao atualizar. Alterações mantidas localmente.", "error");
+    });
 }
 
 function deletarRegistro(tela, idx) {
-    if(!confirm("⚠️ Deseja realmente excluir este registro?\n\nEsta ação não poderá ser desfeita.")) return;
+    if(!confirm("⚠️ Deseja realmente excluir este registro?\n\nEsta ação será permanente na planilha.")) return;
     
+    const rowIndex = idx + 2; // +2 porque linha 1 é cabeçalho
     const tLower = tela.toLowerCase();
-    db[tLower].splice(idx, 1);
-    filtrar(tela);
     
-    if(tela === "Financeiro" || tela === "Investimentos") {
-        atualizarDashboard();
-    }
+    mostrarLoading();
     
-    mostrarNotificacao("Registro excluído com sucesso!");
+    const timeout = setTimeout(() => {
+        esconderLoading();
+        mostrarNotificacao("Tempo esgotado ao excluir.", "error");
+    }, 15000);
+    
+    fetch(URL_API, {
+        method: "POST",
+        body: JSON.stringify({
+            acao: "excluir",
+            aba: tela.toUpperCase(),
+            rowIndex: rowIndex,
+            usuario: currentUser.cpf
+        })
+    })
+    .then(response => {
+        clearTimeout(timeout);
+        if(!response.ok) throw new Error('Erro na resposta');
+        return response.json();
+    })
+    .then(res => {
+        esconderLoading();
+        if(res.sucesso) {
+            mostrarNotificacao("Registro excluído da planilha!");
+            // Remover localmente
+            db[tLower].splice(idx, 1);
+            filtrar(tela);
+            
+            if(tela === "Financeiro" || tela === "Investimentos") {
+                atualizarDashboard();
+            }
+        } else {
+            mostrarNotificacao("Erro ao excluir da planilha.", "error");
+        }
+    })
+    .catch(error => {
+        clearTimeout(timeout);
+        esconderLoading();
+        console.error('Erro:', error);
+        mostrarNotificacao("Erro ao excluir. Tente novamente.", "error");
+    });
 }
 
 function fecharModal() {
     document.getElementById("modalEdit").style.display = "none";
-    editando = { tipo: "", id: null };
+    editando = { tipo: "", id: null, rowIndex: null };
 }
 
 // MODO ESCURO MELHORADO
@@ -1696,7 +1858,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-console.log('🚀 Sistema carregado com sucesso!');
+console.log('🚀 Sistema carregado com sucesso! Edição e exclusão real habilitadas.');
 </script>
 </body>
 </html>
